@@ -13,14 +13,14 @@ pose = mp_pose.Pose()
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=2,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    min_detection_facial=0.5,
+    min_tracking_facial=0.5
 )
 
 prev_eye_center = None
 prev_hand_center = None
 
-def extract_posture(pose_landmarks):
+def extract_pose(pose_landmarks):
     """상체만 보일 때: 어깨선의 수평 정도로 자세 평가"""
     try:
         l_shoulder = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
@@ -35,7 +35,7 @@ def extract_posture(pose_landmarks):
     except:
         return 50
 
-def extract_expression(landmarks):
+def extract_facial(landmarks):
     """표정 점수: 입꼬리 비율로 미소 여부 판별"""
     left_mouth = landmarks[61]
     right_mouth = landmarks[291]
@@ -54,7 +54,7 @@ def extract_expression(landmarks):
     else:
         return 40
 
-def extract_stability(landmarks, hand_landmarks):
+def extract_understanding(landmarks, hand_landmarks):
     """침착함 점수: 눈동자 움직임 + 손동작 과다 여부"""
     global prev_eye_center, prev_hand_center
     score = 100
@@ -91,16 +91,16 @@ def extract_stability(landmarks, hand_landmarks):
     return max(0, int(score))
 
 def analyze_video(video_path):
-    """영상 하나를 분석해서 posture/expression/stability 점수 반환"""
+    """영상 하나를 분석해서 pose/facial/understanding 점수 반환"""
     if not os.path.exists(video_path):
-        return {"posture": 0, "expression": 0, "stability": 0}
+        return {"pose": 0, "facial": 0, "understanding": 0}
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        return {"posture": 0, "expression": 0, "stability": 0}
+        return {"pose": 0, "facial": 0, "understanding": 0}
 
     frame_count = 0
-    posture_total = expression_total = stability_total = 0
+    pose_total = facial_total = understanding_total = 0
 
     while True:
         ret, frame = cap.read()
@@ -112,34 +112,34 @@ def analyze_video(video_path):
         pose_results = pose.process(rgb)
         hand_results = hands.process(rgb)
 
-        posture_score = expression_score = stability_score = 0
+        pose_score = facial_score = understanding_score = 0
 
         if pose_results.pose_landmarks:
-            posture_score = extract_posture(pose_results.pose_landmarks)
+            pose_score = extract_pose(pose_results.pose_landmarks)
 
         if face_results.multi_face_landmarks:
-            expression_score = extract_expression(face_results.multi_face_landmarks[0].landmark)
+            facial_score = extract_facial(face_results.multi_face_landmarks[0].landmark)
 
             if hand_results.multi_hand_landmarks:
-                stability_score = extract_stability(face_results.multi_face_landmarks[0].landmark,
+                understanding_score = extract_understanding(face_results.multi_face_landmarks[0].landmark,
                                                     hand_results.multi_hand_landmarks[0])
             else:
-                stability_score = extract_stability(face_results.multi_face_landmarks[0].landmark, None)
+                understanding_score = extract_understanding(face_results.multi_face_landmarks[0].landmark, None)
         else:
-            stability_score = 70
+            understanding_score = 70
 
-        posture_total += posture_score
-        expression_total += expression_score
-        stability_total += stability_score
+        pose_total += pose_score
+        facial_total += facial_score
+        understanding_total += understanding_score
         frame_count += 1
 
     cap.release()
 
     if frame_count == 0:
-        return {"posture": 0, "expression": 0, "stability": 0}
+        return {"pose": 0, "facial": 0, "understanding": 0}
 
     return {
-        "posture": posture_total // frame_count,
-        "expression": expression_total // frame_count,
-        "stability": stability_total // frame_count
+        "pose": pose_total // frame_count,
+        "facial": facial_total // frame_count,
+        "understanding": understanding_total // frame_count #추후 침착함으로 변경 필요 
     }

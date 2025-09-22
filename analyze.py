@@ -27,15 +27,15 @@ async def analyze(
         os.unlink(tmp.name)  # 임시 파일 삭제
 
     # 평균 산출 (3개 영상 통합)
-    posture = sum(r["posture"] for r in results) // len(results)
-    expression = sum(r["expression"] for r in results) // len(results)
-    stability = sum(r["stability"] for r in results) // len(results)
+    pose = sum(r["pose"] for r in results) // len(results)
+    facial = sum(r["facial"] for r in results) // len(results)
+    understanding = sum(r["understanding"] for r in results) // len(results)
 
     return {
         "feedbackId": feedbackId,
-        "posture": posture,
-        "expression": expression,
-        "stability": stability
+        "pose": pose,  #자세
+        "facial": facial, #표정
+        "understanding": understanding #침착함
     }
 
 if __name__ == "__main__":
