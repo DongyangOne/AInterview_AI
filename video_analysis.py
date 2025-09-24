@@ -80,7 +80,7 @@ def extract_facial(landmarks):
 
 
 def extract_understanding(landmarks, hand_landmarks):
-    """침착함 점수: 눈동자 움직임 + 손동작 과다 여부"""
+    """(understanding)침착함 점수: 눈동자 움직임 + 손동작 과다 여부"""
     global prev_eye_center, prev_hand_center
     score = 100
 
@@ -96,7 +96,9 @@ def extract_understanding(landmarks, hand_landmarks):
             dx = eye_center[0] - prev_eye_center[0]
             dy = eye_center[1] - prev_eye_center[1]
             movement = np.sqrt(dx**2 + dy**2)
-            score -= min(movement * 1000, 20)
+
+            # 👇 가중치 강화 
+            score -= min(movement * 10000, 40)
 
         prev_eye_center = eye_center
 
@@ -110,11 +112,14 @@ def extract_understanding(landmarks, hand_landmarks):
             dx = curr_center[0] - prev_hand_center[0]
             dy = curr_center[1] - prev_hand_center[1]
             distance = np.sqrt(dx**2 + dy**2)
-            score -= min(distance * 1000, 20)
+
+            # 👇 손동작도 감점 강화
+            score -= min(distance * 3000, 40)
 
         prev_hand_center = curr_center
 
     return max(0, int(score))
+
 
 
 # ---------------- Main Video Analyzer ----------------
