@@ -11,13 +11,13 @@ app = FastAPI()
 @app.post("/analyze")
 async def analyze(
     feedbackId: str = Form(...),
-    video: UploadFile = File(...)   # ✅ 단일 파일만 받음
+    videos: UploadFile = File(...)   # ✅ 단일 파일만 받음
 ):
     interview_question = "인생을 살며 푹 빠진것이 있나요? 있다면 설명 부탁드립니다."
 
     # 임시 파일 저장
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-    tmp.write(await video.read())
+    tmp.write(await videos.read())
     tmp.close()
 
     try:
