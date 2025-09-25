@@ -12,7 +12,7 @@ app = FastAPI()
 @app.post("/analyze")
 async def analyze(
     feedbackId: str = Form(...),
-    videos: List[UploadFile] = File(...)
+    videos: UploadFile = File(...)
 ):
     video_results = []
     whisper_results = []
@@ -45,12 +45,12 @@ async def analyze(
         "good": " / ".join(good_texts) if good_texts else "좋은 점 피드백 없음",
         "bad": " / ".join(bad_texts) if bad_texts else "아쉬운 점 피드백 없음",
         "content":  " / ".join(feedback_texts) if feedback_texts else "",
-        "pose": sum(r["pose"] for r in video_results) // len(video_results),
-        "facial": sum(r["facial"] for r in video_results) // len(video_results),
-        "understanding": sum(r["understanding"] for r in video_results) // len(video_results),
-        "confidence": sum(r["confidence"] for r in whisper_results) // len(whisper_results),
-        "tone": sum(r["tone"] for r in whisper_results) // len(whisper_results),
-        "risk_response": sum(r["resilience"] for r in whisper_results) // len(whisper_results),
+        "pose": sum(r["pose"] for r in video_results) ,
+        "facial": sum(r["facial"] for r in video_results) ,
+        "understanding": sum(r["understanding"] for r in video_results) ,
+        "confidence": sum(r["confidence"] for r in whisper_results) ,
+        "tone": sum(r["tone"] for r in whisper_results),
+        "risk_response": sum(r["resilience"] for r in whisper_results) ,
     }
 
     return final_result
