@@ -13,7 +13,7 @@ async def analyze(
     feedbackId: str = Form(...),
     videos: UploadFile = File(...)   # ✅ 단일 파일만 받음
 ):
-    interview_question = "인생을 살며 푹 빠진것이 있나요? 있다면 설명 부탁드립니다."
+    interview_question = "프로젝트 진행 경험 중 프론트 업무를 맡으면서 극복해 나간 경험에 대해 설명해주세요."
 
     # 임시 파일 저장
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
