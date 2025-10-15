@@ -134,6 +134,7 @@ def analyze_video(video_path):
 
     frame_count = 0
     pose_total = facial_total = understanding_total = 0
+    FRAME_SKIP = 5
 
     while True:
         ret, frame = cap.read()
@@ -170,7 +171,9 @@ def analyze_video(video_path):
         pose_total += pose_score
         facial_total += facial_score
         understanding_total += understanding_score
-        frame_count += 1
+        if frame_count % FRAME_SKIP != 0:
+            frame_count += 1
+        continue
 
     cap.release()
 
