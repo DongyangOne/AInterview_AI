@@ -61,7 +61,7 @@ def generate_feedback_with_gemini(question, answer):
         parsed = json.loads(txt)
         elapsed = round(time.time() - start, 2)
         print(f"✅ Gemini 피드백 완료 ({elapsed}초)")
-        print(res)
+        print(parsed)
         return parsed
     except Exception as e:
         print(f"❌ Gemini 오류: {e}")
