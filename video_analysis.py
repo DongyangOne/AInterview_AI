@@ -44,7 +44,7 @@ prev_hand_center = None
 
 # ---------------- Feature Extractors ----------------
 def extract_pose(pose_landmarks):
-    """상체 자세 평가 (어깨선 수평 기준)"""
+    """상체만 보일 때: 어깨선의 수평 정도로 자세 평가"""
     try:
         l_shoulder = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
         r_shoulder = pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
@@ -60,7 +60,7 @@ def extract_pose(pose_landmarks):
 
 
 def extract_facial(landmarks):
-    """표정 점수: 입꼬리 비율 기반 미소 감지"""
+    """표정 점수: 입꼬리 비율로 미소 여부 판별"""
     left_mouth = landmarks[61]
     right_mouth = landmarks[291]
     top_mouth = landmarks[13]
@@ -68,6 +68,7 @@ def extract_facial(landmarks):
 
     mouth_width = abs(right_mouth.x - left_mouth.x)
     mouth_height = abs(bottom_mouth.y - top_mouth.y)
+
     smile_ratio = mouth_height / mouth_width if mouth_width > 0 else 0
 
     if 0.2 < smile_ratio < 0.35:
@@ -79,7 +80,7 @@ def extract_facial(landmarks):
 
 
 def extract_understanding(landmarks, hand_landmarks):
-    """침착함 점수: 눈동자 및 손 움직임 기반"""
+    """(understanding)침착함 점수: 눈동자 움직임 + 손동작 과다 여부"""
     global prev_eye_center, prev_hand_center
     score = 100
 
@@ -95,6 +96,8 @@ def extract_understanding(landmarks, hand_landmarks):
             dx = eye_center[0] - prev_eye_center[0]
             dy = eye_center[1] - prev_eye_center[1]
             movement = np.sqrt(dx**2 + dy**2)
+
+            # 👇 가중치 강화 
             score -= min(movement * 10000, 40)
 
         prev_eye_center = eye_center
@@ -109,6 +112,8 @@ def extract_understanding(landmarks, hand_landmarks):
             dx = curr_center[0] - prev_hand_center[0]
             dy = curr_center[1] - prev_hand_center[1]
             distance = np.sqrt(dx**2 + dy**2)
+
+            # 👇 손동작도 감점 강화
             score -= min(distance * 3000, 40)
 
         prev_hand_center = curr_center
@@ -116,9 +121,10 @@ def extract_understanding(landmarks, hand_landmarks):
     return max(0, int(score))
 
 
+
 # ---------------- Main Video Analyzer ----------------
 def analyze_video(video_path):
-    """영상 분석: pose / facial / understanding 점수 계산"""
+    """영상 하나를 분석해서 pose/facial/understanding 점수 반환"""
     if not os.path.exists(video_path):
         return {"pose": 0, "facial": 0, "understanding": 0}
 
@@ -127,45 +133,30 @@ def analyze_video(video_path):
         return {"pose": 0, "facial": 0, "understanding": 0}
 
     frame_count = 0
-    analyzed_count = 0
     pose_total = facial_total = understanding_total = 0
-
-    FRAME_SKIP = 5  # 5프레임마다 1번 분석
-    TARGET_WIDTH = 320  # 해상도 축소용
+    FRAME_SKIP = 5
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        # 프레임 샘플링
-        if frame_count % FRAME_SKIP != 0:
-            frame_count += 1
-            continue
-        frame_count += 1
-
-        # 해상도 축소
-        h, w = frame.shape[:2]
-        if w > TARGET_WIDTH:
-            scale = TARGET_WIDTH / w
-            frame = cv2.resize(frame, (TARGET_WIDTH, int(h * scale)))
-
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        # Mediapipe 조건부 호출
         face_results = face_mesh.process(rgb)
-        pose_results = pose.process(rgb) if analyzed_count % 2 == 0 else None
-        hand_results = hands.process(rgb) if analyzed_count % 3 == 0 else None
+        pose_results = pose.process(rgb)
+        hand_results = hands.process(rgb)
 
         pose_score = facial_score = understanding_score = 0
 
-        if pose_results and pose_results.pose_landmarks:
+        if pose_results.pose_landmarks:
             pose_score = extract_pose(pose_results.pose_landmarks)
 
         if face_results.multi_face_landmarks:
-            facial_score = extract_facial(face_results.multi_face_landmarks[0].landmark)
+            facial_score = extract_facial(
+                face_results.multi_face_landmarks[0].landmark
+            )
 
-            if hand_results and hand_results.multi_hand_landmarks:
+            if hand_results.multi_hand_landmarks:
                 understanding_score = extract_understanding(
                     face_results.multi_face_landmarks[0].landmark,
                     hand_results.multi_hand_landmarks[0],
@@ -175,27 +166,22 @@ def analyze_video(video_path):
                     face_results.multi_face_landmarks[0].landmark, None
                 )
         else:
-            understanding_score = 70  # 얼굴 인식 실패 시 기본값
+            understanding_score = 70
 
         pose_total += pose_score
         facial_total += facial_score
         understanding_total += understanding_score
-        analyzed_count += 1
+        if frame_count % FRAME_SKIP != 0:
+            frame_count += 1
+        continue
 
     cap.release()
 
-    if analyzed_count == 0:
+    if frame_count == 0:
         return {"pose": 0, "facial": 0, "understanding": 0}
 
     return {
-        "pose": pose_total // analyzed_count,
-        "facial": facial_total // analyzed_count,
-        "understanding": understanding_total // analyzed_count,
+        "pose": pose_total // frame_count,
+        "facial": facial_total // frame_count,
+        "understanding": understanding_total // frame_count,
     }
-
-
-# ---------------- 테스트 실행 ----------------
-if __name__ == "__main__":
-    path = "test_video.mp4"
-    result = analyze_video(path)
-    print(result)
