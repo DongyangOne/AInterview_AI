@@ -2,6 +2,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import os
+import time
 import logging
 
 # 🔇 Mediapipe / TensorFlow 로그 억제
@@ -9,7 +10,7 @@ os.environ["GLOG_minloglevel"] = "2"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 logging.getLogger('mediapipe').setLevel(logging.ERROR)
 
-# ---------------- 전역 Mediapipe 객체 ----------------
+# ---------------- Mediapipe 초기화 ----------------
 mp_face_mesh = mp.solutions.face_mesh
 mp_pose = mp.solutions.pose
 mp_hands = mp.solutions.hands
@@ -21,7 +22,6 @@ face_mesh = mp_face_mesh.FaceMesh(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
-
 pose = mp_pose.Pose(
     static_image_mode=False,
     model_complexity=1,
@@ -29,7 +29,6 @@ pose = mp_pose.Pose(
     min_detection_confidence=0.5,
     min_tracking_confidence=0.5
 )
-
 hands = mp_hands.Hands(
     static_image_mode=False,
     max_num_hands=2,
@@ -37,94 +36,65 @@ hands = mp_hands.Hands(
     min_tracking_confidence=0.5
 )
 
-# ---------------- 상태 추적용 전역 변수 ----------------
+# ---------------- 상태 추적 ----------------
 prev_eye_center = None
 prev_hand_center = None
 
 
 # ---------------- Feature Extractors ----------------
 def extract_pose(pose_landmarks):
-    """상체만 보일 때: 어깨선의 수평 정도로 자세 평가"""
     try:
-        l_shoulder = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
-        r_shoulder = pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
-
-        dx = r_shoulder.x - l_shoulder.x
-        dy = r_shoulder.y - l_shoulder.y
+        l = pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER]
+        r = pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+        dx, dy = r.x - l.x, r.y - l.y
         angle = np.degrees(np.arctan2(dy, dx))
-
-        upright_score = 100 - min(abs(angle), 30) * 2  # 기울면 감점
+        upright_score = 100 - min(abs(angle), 30) * 2
         return max(0, int(upright_score))
     except:
         return 50
 
 
 def extract_facial(landmarks):
-    """표정 점수: 입꼬리 비율로 미소 여부 판별"""
-    left_mouth = landmarks[61]
-    right_mouth = landmarks[291]
-    top_mouth = landmarks[13]
-    bottom_mouth = landmarks[14]
-
-    mouth_width = abs(right_mouth.x - left_mouth.x)
-    mouth_height = abs(bottom_mouth.y - top_mouth.y)
-
-    smile_ratio = mouth_height / mouth_width if mouth_width > 0 else 0
-
-    if 0.2 < smile_ratio < 0.35:
-        return 90
-    elif 0.15 < smile_ratio < 0.4:
-        return 70
-    else:
-        return 40
+    left, right, top, bottom = landmarks[61], landmarks[291], landmarks[13], landmarks[14]
+    width = abs(right.x - left.x)
+    height = abs(bottom.y - top.y)
+    ratio = height / width if width > 0 else 0
+    if 0.2 < ratio < 0.35: return 90
+    elif 0.15 < ratio < 0.4: return 70
+    else: return 40
 
 
 def extract_understanding(landmarks, hand_landmarks):
-    """(understanding)침착함 점수: 눈동자 움직임 + 손동작 과다 여부"""
     global prev_eye_center, prev_hand_center
     score = 100
 
-    # 눈동자 움직임
     if landmarks:
-        left_eye = landmarks[33]
-        right_eye = landmarks[263]
-        eye_center = np.mean(
-            [[left_eye.x, left_eye.y], [right_eye.x, right_eye.y]], axis=0
-        )
-
+        left_eye, right_eye = landmarks[33], landmarks[263]
+        eye_center = np.mean([[left_eye.x, left_eye.y], [right_eye.x, right_eye.y]], axis=0)
         if prev_eye_center is not None:
-            dx = eye_center[0] - prev_eye_center[0]
-            dy = eye_center[1] - prev_eye_center[1]
-            movement = np.sqrt(dx**2 + dy**2)
-
-            # 👇 가중치 강화 
-            score -= min(movement * 10000, 40)
-
+            dx, dy = eye_center[0] - prev_eye_center[0], eye_center[1] - prev_eye_center[1]
+            move = np.sqrt(dx**2 + dy**2)
+            score -= min(move * 10000, 40)
         prev_eye_center = eye_center
 
-    # 손동작
     if hand_landmarks:
         xs = [lm.x for lm in hand_landmarks.landmark]
         ys = [lm.y for lm in hand_landmarks.landmark]
         curr_center = (np.mean(xs), np.mean(ys))
-
         if prev_hand_center is not None:
-            dx = curr_center[0] - prev_hand_center[0]
-            dy = curr_center[1] - prev_hand_center[1]
-            distance = np.sqrt(dx**2 + dy**2)
-
-            # 👇 손동작도 감점 강화
-            score -= min(distance * 3000, 40)
-
+            dx, dy = curr_center[0] - prev_hand_center[0], curr_center[1] - prev_hand_center[1]
+            dist = np.sqrt(dx**2 + dy**2)
+            score -= min(dist * 3000, 40)
         prev_hand_center = curr_center
 
     return max(0, int(score))
 
 
-
-# ---------------- Main Video Analyzer ----------------
+# ---------------- Main ----------------
 def analyze_video(video_path):
-    """영상 하나를 분석해서 pose/facial/understanding 점수 반환"""
+    start = time.time()
+    print("🎥 영상 분석 시작...")
+
     if not os.path.exists(video_path):
         return {"pose": 0, "facial": 0, "understanding": 0}
 
@@ -132,56 +102,60 @@ def analyze_video(video_path):
     if not cap.isOpened():
         return {"pose": 0, "facial": 0, "understanding": 0}
 
-    frame_count = 0
-    pose_total = facial_total = understanding_total = 0
     FRAME_SKIP = 5
+    TARGET_WIDTH = 320
+    f_count, analyzed = 0, 0
+    pose_sum = facial_sum = understanding_sum = 0
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
+        f_count += 1
+        if f_count % FRAME_SKIP != 0:
+            continue
 
+        # 해상도 축소
+        h, w = frame.shape[:2]
+        if w > TARGET_WIDTH:
+            s = TARGET_WIDTH / w
+            frame = cv2.resize(frame, (TARGET_WIDTH, int(h * s)))
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
         face_results = face_mesh.process(rgb)
-        pose_results = pose.process(rgb)
-        hand_results = hands.process(rgb)
+        pose_results = pose.process(rgb) if analyzed % 2 == 0 else None
+        hand_results = hands.process(rgb) if analyzed % 3 == 0 else None
 
         pose_score = facial_score = understanding_score = 0
 
-        if pose_results.pose_landmarks:
+        if pose_results and pose_results.pose_landmarks:
             pose_score = extract_pose(pose_results.pose_landmarks)
 
         if face_results.multi_face_landmarks:
-            facial_score = extract_facial(
-                face_results.multi_face_landmarks[0].landmark
-            )
-
-            if hand_results.multi_hand_landmarks:
-                understanding_score = extract_understanding(
-                    face_results.multi_face_landmarks[0].landmark,
-                    hand_results.multi_hand_landmarks[0],
-                )
+            landmarks = face_results.multi_face_landmarks[0].landmark
+            facial_score = extract_facial(landmarks)
+            if hand_results and hand_results.multi_hand_landmarks:
+                understanding_score = extract_understanding(landmarks, hand_results.multi_hand_landmarks[0])
             else:
-                understanding_score = extract_understanding(
-                    face_results.multi_face_landmarks[0].landmark, None
-                )
+                understanding_score = extract_understanding(landmarks, None)
         else:
             understanding_score = 70
 
-        pose_total += pose_score
-        facial_total += facial_score
-        understanding_total += understanding_score
-        if frame_count % FRAME_SKIP != 0:
-            frame_count += 1
-        continue
+        pose_sum += pose_score
+        facial_sum += facial_score
+        understanding_sum += understanding_score
+        analyzed += 1
 
     cap.release()
 
-    if frame_count == 0:
+    elapsed = round(time.time() - start, 2)
+    print(f"✅ 영상 분석 완료 ({elapsed}초, {analyzed}프레임 분석됨)")
+
+    if analyzed == 0:
         return {"pose": 0, "facial": 0, "understanding": 0}
 
     return {
-        "pose": pose_total // frame_count,
-        "facial": facial_total // frame_count,
-        "understanding": understanding_total // frame_count,
+        "pose": pose_sum // analyzed,
+        "facial": facial_sum // analyzed,
+        "understanding": understanding_sum // analyzed,
     }

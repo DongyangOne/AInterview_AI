@@ -1,37 +1,39 @@
 from fastapi import FastAPI, UploadFile, File, Form
+import tempfile, os, time
 import uvicorn
-import tempfile, os
 
-# 🔹 두 분석 모듈 불러오기
 from video_analysis import analyze_video
-from audio_analysis import run_interview_feedback_service  
+from audio_analysis import run_interview_feedback_service
 
 app = FastAPI()
 
 @app.post("/analyze")
 async def analyze(
     feedbackId: str = Form(...),
-    videos: UploadFile = File(...)   # ✅ 단일 파일만 받음
+    videos: UploadFile = File(...)
 ):
-    interview_question = "프로젝트 진행 경험 중 프론트 업무를 맡으면서 극복해 나간 경험에 대해 설명해주세요."
+    start = time.time()
+    interview_question = "프로젝트 진행 중 프론트엔드 업무를 맡으며 어려움을 극복한 경험을 말해주세요."
 
-    # 임시 파일 저장
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     tmp.write(await videos.read())
     tmp.close()
 
     try:
-        # 🎯 1) 영상 기반 분석
-        v_result = analyze_video(tmp.name)  
+        print("\n====================")
+        print(f"📂 파일 수신 완료: {videos.filename}")
+        print("====================")
 
-        # 🎯 2) Whisper + Gemini 분석
+        # 1️⃣ 영상 분석
+        v_result = analyze_video(tmp.name)
+
+        # 2️⃣ Whisper + Gemini 분석
         w_result = run_interview_feedback_service(tmp.name, interview_question)
 
-        # 🎯 최종 결과 (단일 파일이라 평균 계산 필요 없음)
-        final_result = {
+        result = {
             "feedbackId": feedbackId,
-            "good": w_result.get("good", "좋은 점 피드백 없음"),
-            "bad": w_result.get("bad", "아쉬운 점 피드백 없음"),
+            "good": w_result.get("good", "좋은 점 없음"),
+            "bad": w_result.get("bad", "아쉬운 점 없음"),
             "content": w_result.get("feedback", ""),
             "pose": v_result.get("pose", 0),
             "facial": v_result.get("facial", 0),
@@ -41,10 +43,12 @@ async def analyze(
             "risk_response": w_result.get("resilience", 0),
         }
 
-        return final_result
+        print(f"✅ 전체 분석 완료 (총 {round(time.time() - start, 2)}초 소요)")
+        print("====================\n")
+        return result
 
     finally:
-        os.unlink(tmp.name)  # 임시 파일 삭제
+        os.unlink(tmp.name)
 
 
 if __name__ == "__main__":
